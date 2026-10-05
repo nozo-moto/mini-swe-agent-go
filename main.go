@@ -10,7 +10,7 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	messages, err := run(ctx, "挨拶を出力してください", ".", scriptedModel)
+	messages, err := NewRunner(BashModel{}).Run(ctx, "挨拶を出力してください", ".", scriptedModel)
 	for _, message := range messages {
 		fmt.Printf("[%s]\n%s\n\n", message.Role, message.Content)
 	}

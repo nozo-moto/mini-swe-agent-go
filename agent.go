@@ -14,7 +14,17 @@ type Message struct {
 
 const completionMarker = "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
 
-func run(ctx context.Context, task, dir string, model func([]Message) (string, error)) ([]Message, error) {
+func NewRunner(model Model) *Runner {
+	return &Runner{
+		model: model,
+	}
+}
+
+type Runner struct {
+	model Model
+}
+
+func (r *Runner) Run(ctx context.Context, task, dir string, model func([]Message) (string, error)) ([]Message, error) {
 	messages := []Message{{Role: "user", Content: task}}
 	for step := 0; step < 10; step++ {
 		command, err := model(messages)
@@ -23,7 +33,7 @@ func run(ctx context.Context, task, dir string, model func([]Message) (string, e
 		}
 		messages = append(messages, Message{Role: "assistant", Content: command})
 
-		output, code, err := execute(ctx, dir, command)
+		output, code, err := r.model.Execute(ctx, dir, command)
 		if err != nil {
 			return messages, err
 		}
