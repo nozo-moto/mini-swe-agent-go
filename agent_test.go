@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -30,18 +32,18 @@ func TestRunPassesFailedCommandToModel(t *testing.T) {
 		if messages[2].ToolCallID != "test-call" {
 			t.Fatal("tool result lost its call ID")
 		}
-		return bashReply("printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\ndone\\n'"), nil
+		return Message{Role: "assistant", Content: "失敗を確認しました"}, nil
 	})
 	messages, err := NewRunner(model, BashEnvironment{}).Run(context.Background(), "task", t.TempDir())
-	if err != nil || calls != 2 || len(messages) != 5 {
+	if err != nil || calls != 2 || len(messages) != 4 {
 		t.Fatalf("calls=%d messages=%d err=%v", calls, len(messages), err)
 	}
 }
 
-func TestCompletionRequiresSuccessfulFirstLine(t *testing.T) {
+func TestCommandOutputDoesNotCompleteRun(t *testing.T) {
 	for _, command := range []string{
 		"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\n'; exit 1",
-		"printf 'prefix\\nCOMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\n'",
+		"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\n'",
 	} {
 		t.Run(command, func(t *testing.T) {
 			model := modelFunc(func(context.Context, []Message) (Message, error) { return bashReply(command), nil })
@@ -52,5 +54,49 @@ func TestCompletionRequiresSuccessfulFirstLine(t *testing.T) {
 				t.Fatalf("messages=%d err=%v", len(messages), err)
 			}
 		})
+	}
+}
+
+func TestRunMultipleStepsThenFinalAnswer(t *testing.T) {
+	calls := 0
+	var trace bytes.Buffer
+	model := modelFunc(func(_ context.Context, messages []Message) (Message, error) {
+		calls++
+		if !strings.Contains(trace.String(), fmt.Sprintf("[step %d/3]", calls)) {
+			t.Fatal("step was not displayed before querying the model")
+		}
+		switch calls {
+		case 1:
+			return bashReply("printf hello > greeting.txt"), nil
+		case 2:
+			if len(messages) != 3 || messages[2].Content != "exit code: 0\n" {
+				t.Fatalf("missing first observation: %+v", messages)
+			}
+			return bashReply("cat greeting.txt"), nil
+		case 3:
+			if len(messages) != 5 || messages[4].Content != "exit code: 0\nhello" || !strings.Contains(trace.String(), "exit code: 0\nhello") {
+				t.Fatalf("missing second observation: %+v", messages)
+			}
+			return Message{Role: "assistant", Content: "helloを確認しました"}, nil
+		default:
+			t.Fatal("model queried after final answer")
+			return Message{}, nil
+		}
+	})
+	runner := NewRunner(model, BashEnvironment{})
+	runner.MaxSteps, runner.Trace = 3, &trace
+	messages, err := runner.Run(context.Background(), "create and read", t.TempDir())
+	if err != nil || calls != 3 || len(messages) != 6 || !strings.Contains(trace.String(), "[final]\nhelloを確認しました") {
+		t.Fatalf("calls=%d messages=%+v trace=%q err=%v", calls, messages, trace.String(), err)
+	}
+}
+
+func TestRunRejectsEmptyFinalAnswer(t *testing.T) {
+	model := modelFunc(func(context.Context, []Message) (Message, error) {
+		return Message{Role: "assistant", Content: " "}, nil
+	})
+	_, err := NewRunner(model, BashEnvironment{}).Run(context.Background(), "task", t.TempDir())
+	if err == nil {
+		t.Fatal("empty response was treated as completion")
 	}
 }

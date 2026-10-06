@@ -43,13 +43,8 @@ func main() {
 	}
 	runner := NewRunner(model, BashEnvironment{})
 	runner.MaxSteps = *maxSteps
-	messages, err := runner.Run(ctx, *task, *dir)
-	for _, message := range messages {
-		fmt.Printf("[%s]\n%s\n\n", message.Role, message.Content)
-		if message.Action != nil {
-			fmt.Printf("$ %s\n\n", message.Action.Command)
-		}
-	}
+	runner.Trace = os.Stdout
+	_, err := runner.Run(ctx, *task, *dir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

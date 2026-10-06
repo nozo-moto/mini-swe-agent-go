@@ -51,7 +51,7 @@ func TestOpenAIModelRoundTrip(t *testing.T) {
 			fmt.Fprint(w, `{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":"Let me check.","tool_calls":[{"id":"call-1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"printf observed\"}"}}]}}]}`)
 			return
 		}
-		if len(request.Messages) != 4 {
+		if len(request.Messages) != calls*2 {
 			t.Error("history was not preserved")
 		} else {
 			assistant, observation := request.Messages[2], request.Messages[3]
@@ -63,12 +63,22 @@ func TestOpenAIModelRoundTrip(t *testing.T) {
 				t.Error("shell observation was not passed back to the model")
 			}
 		}
+		if calls == 2 {
+			fmt.Fprint(w, `{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":"Check again.","tool_calls":[{"id":"call-2","type":"function","function":{"name":"bash","arguments":"{\"command\":\"printf verified\"}"}}]}}]}`)
+			return
+		}
+		if len(request.Messages) == 6 {
+			observation := request.Messages[5]
+			if observation.ToolCallID != "call-2" || observation.Content != "exit code: 0\nverified" {
+				t.Error("second observation was not associated with the second call")
+			}
+		}
 		fmt.Fprint(w, `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}]}`)
 	}))
 	defer server.Close()
 	model := OpenAIModel{Client: testClient(server.URL), Name: "test-model", Instructions: "test instructions"}
 	messages, err := NewRunner(model, BashEnvironment{}).Run(context.Background(), "task", t.TempDir())
-	if err != nil || calls != 2 || len(messages) != 4 || messages[3].Content != "done" {
+	if err != nil || calls != 3 || len(messages) != 6 || messages[5].Content != "done" {
 		t.Fatalf("calls=%d messages=%+v err=%v", calls, messages, err)
 	}
 }
