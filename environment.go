@@ -8,12 +8,13 @@ import (
 	"time"
 )
 
-type Model interface {
-	Execute(ctx context.Context, dir, command string) (string, int, error) 
+type Environment interface {
+	Execute(ctx context.Context, dir, command string) (string, int, error)
 }
 
-type BashModel struct {}
-func (b BashModel) Execute(ctx context.Context, dir, command string) (string, int, error) {
+type BashEnvironment struct{}
+
+func (b BashEnvironment) Execute(ctx context.Context, dir, command string) (string, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)

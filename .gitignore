@@ -1,2 +1,6 @@
 /mini-swe-agent-go
 ROADMAP.md
+README.md
+.env
+.env.*
+!.env.example
